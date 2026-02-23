@@ -1,13 +1,22 @@
 import pickle
 import numpy as np
 import pandas as pd
+from sklearn.decomposition import PCA
 
 # Loading data
 with open('word_embeddings_subset.p', 'rb') as f:
     word_embeddings = pickle.load(f)
 
-# Each word is a row, each column is a vector element
-df = pd.DataFrame.from_dict(word_embeddings, orient='index')
+# Each word is a row, each column is a vector element (300 dimensions)
+df_full = pd.DataFrame.from_dict(word_embeddings, orient='index')
+print(f"Original shape: {df_full.shape}")  # (N, 300)
+
+# Reduce 300 dimensions to 3 using PCA
+pca = PCA(n_components=3)
+vectors_3d = pca.fit_transform(df_full.values)
+df = pd.DataFrame(vectors_3d, index=df_full.index, columns=['x', 'y', 'z'])
+print(f"Reduced shape: {df.shape}")  # (N, 3)
+print(f"Explained variance: {pca.explained_variance_ratio_.sum():.2%}")
 print(df.head())
 
 def cosine_similarity(vec1, vec2):
@@ -121,3 +130,63 @@ print(f"\n'{result[0]}': {find_most_similar(result[0], top_n=5)}")
 print(f"\n--- Angle between words 'Belarus' and 'Minsk' ---")
 angle = angle_between_words("Belarus", "Minsk")
 print(f"  'Belarus' ↔ 'Minsk': {angle:.2f}°")
+
+# Mark: Cross Product (vector product) — works only in 3D
+# Using PCA-reduced 3D vectors from df
+def find_closest_to_vector_3d(vec_3d, exclude=[]):
+    """Find the closest word to a 3D vector using PCA-reduced data."""
+    best_word = None
+    best_sim = -1
+    for word in df.index:
+        if word in exclude:
+            continue
+        word_vec = df.loc[word].values
+        sim = cosine_similarity(vec_3d, word_vec)
+        if sim > best_sim:
+            best_word = word
+            best_sim = sim
+    return (best_word, best_sim)
+
+# Cross product of two words in 3D space
+word_c, word_d = 'France', 'Paris'
+vec_c = df.loc[word_c].values
+vec_d = df.loc[word_d].values
+
+cross_product_2 = np.cross(vec_c, vec_d)
+print(f"\n--- Cross product: '{word_c}' × '{word_d}' ---")
+print(f"  Cross product: {cross_product_2}")
+result_cross_2 = find_closest_to_vector_3d(cross_product_2, exclude=[word_c, word_d])
+print(f"  Closest word to cross product: '{result_cross_2[0]}' (similarity: {result_cross_2[1]:.4f})")
+
+# Note: Cross product returns a vector PERPENDICULAR to both input vectors.
+# In word embedding space this doesn't have a clear semantic meaning
+# (unlike dot product or vector addition), but it demonstrates
+# that cross product only works in 3D — which is why we needed PCA first.
+
+# Analysis of Cross Product results:
+#
+# Cross product: 'France' × 'Paris' → closest word: 'Zagreb' (similarity: 0.92)
+#
+# Why Zagreb? Interpretation:
+#
+# 1. Cross product gives a vector PERPENDICULAR to both France and Paris.
+#    It does NOT combine their meanings — it finds a direction orthogonal to both.
+#
+# 2. The result has NO semantic meaning in NLP. Unlike:
+#    - Dot product → measures similarity (France · Paris = high → related)
+#    - Vector addition → combines meanings (Belarus + capital ≈ Minsk)
+#    - Analogy (a - b + c) → transfers relationships (Belarus - France + Paris = Minsk)
+#
+# 3. Zagreb appeared because in the compressed 3D PCA space, it happens to lie
+#    in the direction perpendicular to the France-Paris plane. This is a geometric
+#    coincidence, not a meaningful relationship.
+#
+# 4. The high similarity (0.92) is misleading — it only means Zagreb's 3D PCA vector
+#    points in a similar direction to the cross product result. In the original 300D
+#    space, this relationship would not hold.
+#
+# 5. Cross product is useful in physics and 3D graphics (calculating surface normals,
+#    torque, angular momentum), but NOT in NLP/word embeddings.
+#
+# Conclusion: Cross product demonstrates a mathematical operation on 3D vectors,
+# but the result should NOT be interpreted semantically in word embedding context.
